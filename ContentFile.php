@@ -1,14 +1,14 @@
 <?php
 namespace Skel;
 
-class ContentFile extends DataClass {
+class ContentFile extends DataClass implements Interfaces\ContentFile {
   const TABLE_NAME = 'contentFiles';
 
   protected $db;
 
   public function __construct(array $e=array(), Interfaces\Template $t=null) {
     parent::__construct($e, $t);
-    $this->addDefinedFields('path', 'mtime', 'contentId');
+    $this->addDefinedFields(array('path', 'mtime', 'contentId'));
   }
 
 
@@ -19,7 +19,8 @@ class ContentFile extends DataClass {
 
 
   protected function convertDataToField(string $field, $dataVal) {
-    if ($field == 'mtime') return new \DateTime($dataVal);
+    if ($dataVal === null) return $dataVal;
+    if ($field == 'mtime') return new \DateTime('@'.$dataVal);
     return parent::convertDataToField($field, $dataVal);
   }
 
@@ -31,7 +32,7 @@ class ContentFile extends DataClass {
   protected function typecheckAndConvertInput(string $field, $val) {
     if ($val === null || $val instanceof DataCollection) return $val;
 
-    if ($field == 'mdtime') {
+    if ($field == 'mtime') {
       if (!($val instanceof \DateTime)) throw new \InvalidArgumentException("Field `$field` must be a DateTime object.");
       return $val->getTimestamp();
     }
@@ -59,14 +60,14 @@ class ContentFile extends DataClass {
     else $this->clearError($field, 'required');
   }
 
-  public function validateObject() {
-    if (!$this->db->filePathIsUnique()) {
+  public function validateObject(Interfaces\Db $db) {
+    if (!$db->filePathIsUnique($this)) {
       $this->setError('path', "The file path associated with this file is already registered in the database. This shouldn't happen. You may need to rebuild your database (i.e., delete the db file and allow the system to recreate it).", 'uniqueness');
     } else {
       $this->clearError('path','uniqueness');
     }
 
-    if (!$this->db->fileContentIdIsUnique()) {
+    if (!$db->fileContentIdIsUnique($this)) {
       $this->setError('contentId', "The contentId associated with this file is already registered with another file in the Db. This shouldn't happen. You may need to rebuild your database (i.e., delete the db file and allow the system to recreate it).", 'uniqueness');
     } else {
       $this->clearError('contentId','uniqueness');

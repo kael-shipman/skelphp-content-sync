@@ -2,3 +2,5 @@ vendor
 composer.lock
 *.swp
 *.swo
+tests/content
+tests/*.sqlite3

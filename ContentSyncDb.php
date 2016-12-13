@@ -1,7 +1,7 @@
 <?php
 namespace Skel;
 
-class ContentSyncDb extends Db {
+class ContentSyncDb extends Db implements Interfaces\ContentSyncDb {
   const VERSION = 1;
   const SCHEMA_NAME = "ContentSyncDb";
 
@@ -15,13 +15,16 @@ class ContentSyncDb extends Db {
   }
 
   protected function verifyEnvironment() {
-    $this->db->query('SELECT * FROM "content" JOIN "tags" ON ("content"."id" = "tags"."contentId") LIMIT 1');
+    $this->db->query('SELECT * FROM "content" JOIN "contentTags" ON ("content"."id" = "contentId") JOIN "tags" ON ("tagId" = "tags"."id") LIMIT 1');
   }
 
-  protected function upgradeDb(int $targ, int $from) {
+  protected function upgradeDatabase(int $targ, int $from) {
     if ($from < 1 && $targ >= 1) {
       $this->db->exec('CREATE TABLE "contentFiles" ("id" INTEGER PRIMARY KEY, "path" TEXT NOT NULL, "mtime" INTEGER NOT NULL, "contentId" INTEGER NOT NULL)');
     }
+  }
+
+  protected function downgradeDatabase(int $targ, int $from) {
   }
 
 
@@ -30,7 +33,7 @@ class ContentSyncDb extends Db {
 
   public function getContentFileList() {
     $list = $this->db->query('SELECT * FROM "contentFiles"');
-    $list = $list->fetchAll(PDO::FETCH_ASSOC);
+    $list = $list->fetchAll(\PDO::FETCH_ASSOC);
     foreach($list as $k => $data) $list[$k] = ContentFile::restoreFromData($data);
     return new DataCollection($list);
   }
