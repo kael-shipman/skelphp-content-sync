@@ -6,7 +6,6 @@ class ContentSynchronizerLib {
   protected $cms;
   protected $config;
   protected $fileList;
-  protected $processedFiles;
 
 
   public function __construct(Interfaces\ContentSyncConfig $config, Interfaces\ContentSyncDb $db, Interfaces\Cms $cms) {
@@ -17,62 +16,49 @@ class ContentSynchronizerLib {
 
   // Execution Functions
 
-  public function getFileList(bool $force=true) {
+  public function getFileList(bool $force=false) {
     if ($force || !$this->fileList) $this->fileList = $this->db->getContentFileList();
     return $this->fileList;
   }
 
   public function syncContent() {
-    
-    // Update the file list
-    $this->getFileList();
-    $this->processedFiles = new DataCollection();
+    // Iterate through all files in content pages directory and update records
+    foreach($this->filesInDir($this->config->getContentPagesDir()) as $f) {
+      if ($this->isIgnored($f[0], $f[1])) continue;
+      $path = "$f[0]/$f[1]";
+      // Get normalized file path for DB
+      $dbPath = $this->getDbFilePath($path);
+      // Filter DB objects to get the one associated with this path (should only be one entry, but we shouldn't assume....)
+      $dbFile = $this->getFileList()->filter('path', $dbPath);
 
-    // Iterate through all files in content pages directory (recursively)
-    $this->traverseDir($this->config->getContentPagesDir());
+      // If the file is not found in the database or the db is out of date, update
+      if (count($dbFile) == 0 || filemtime($path) > $dbFile[0]['mtime']) $this->updateDbFromFile($path);
 
-    // Now iterate through the rest of the files in the list and delete them from the DB
-    foreach($this->fileList as $dbFile) {
-      if ($this->processedFiles->indexOf($dbFile) === null) $this->deleteFromDb($dbFile['path']);
+      // Otherwise, update the file from the DB, if applicable
+      else $this->updateFileFromDb($path);
+    }
+
+    // Now iterate through the files in the db cache and delete if nonexistent
+    foreach($this->getFileList() as $dbFile) {
+      if (!file_exists($this->getFullFilePath($dbFile['path']))) $this->deleteFromDb($dbFile['path']);
     }
 
     // Clear everything out
     $this->fileList = null;
-    $this->processedFiles = null;
   }
 
-  protected function traverseDir(string $dirname) {
+  protected function filesInDir(string $dirname) {
+    $files = array();
     $dir = dir($dirname);
     while (($file = $dir->read()) !== false) {
-      if ($this->isIgnored($dirname, $file)) continue;
+      if (substr($file, 0, 1) == '.') continue;
       $path = "$dirname/$file";
-      if (is_dir($path)) $this->traverseDir($path);
+      if (is_dir($path)) $files = array_merge($files, $this->filesInDir($path));
       else {
-        // Get normalized file path for DB
-        $dbPath = $this->getDbFilePath($path);
-        // Filter DB objects to get the one associated with this path (should only be one entry, but we shouldn't assume....)
-        $dbFile = $this->fileList->filter('path', $dbPath);
-
-        // If the file is not found in the database
-        if (count($dbFile) == 0) {
-          // See if the file was renamed and if so, register that
-          $filePrevPath = $this->getFilePreviousPath($dbPath);
-          if ($filePrevPath) {
-            $this->registerFileRename($filePrevPath, $dbPath);
-            $this->getFileList();
-          }
-
-
-          // Now add or update content from file
-          $this->updateDbFromFile($path);
-
-        // If the file IS in the DB and is fresher than the db version, update db from file
-        } elseif (filemtime($path) > $dbFile[0]['mtime']) $this->updateDbFromFile($path);
-
-        // Otherwise, update the file from the DB, if applicable
-        else $this->updateFileFromDb($path);
+        $files[] = array($dirname, $file);
       }
     }
+    return $files;
   }
 
 
@@ -89,51 +75,63 @@ class ContentSynchronizerLib {
 
   public function deleteFromDb(string $filepath) {
     $contentFile = $this->getFileList()->filter('path', $this->getDbFilePath($filepath))[0];
-    if ($contentFile) {
-      $content = $this->cms->getContentById($contentFile['contentId']);
-      $this->cms->deleteObject($content);
-    }
+    if (!$contentFile) return;
+
+    $content = $this->cms->getContentById($contentFile['contentId']);
+    $this->cms->deleteObject($content);
+    $this->db->deleteObject($contentFile);
+    $this->fileList->remove($contentFile);
   }
 
   public function updateDbFromFile(string $filepath) {
     $contentFile = $this->getFileList()->filter('path', $this->getDbFilePath($filepath))[0];
-    if ($contentFile) $dbContent = $this->cms->getContentById($contentFile['contentId']);
-    else $contentFile = (new ContentFile())->set('path', $this->getDbFilePath($filepath));
 
-    // If this contentFile hasn't already been scanned...
-    if (!$dbContent) {
-      // Create a new Content object from it
-      $dbContent = $this->getObjectFromFile($filepath);
+    // If the contentFile is already registered, get the content associated with it
+    if ($contentFile) {
+      $dbContent = $this->cms->getContentById($contentFile['contentId']);
+      $dbContent->updateFromUserInput($this->getDataFromFile($filepath));
 
-      // But check to see if it's a duplicate address
-      $check = $this->cms->getContentByAddress($dbContent['address']);
+    // Otherwise...
+    } else {
+      $fileObj = $this->getObjectFromFile($filepath);
 
-      // If so, use the data object that's already in the DB and update its fields
-      if ($check) {
-        // But first check to see if there's already a ContentFile managing it
-        foreach($this->fileList->filter('contentId', (int)$check['id']) as $cf) {
-          if ($cf['path'] != $contentFile['path']) {
-           if (file_exists($this->getFullFilePath($cf['path']))) throw new InvalidContentFileException("It appears as though content at $check[address] is already being managed by the file `$cf[path]`. The file `$contentFile[path]` is a duplicate and should be removed to avoid confusion.");
-           else $this->registerFileRename($cf['path'], $contentFile['path']);
+      // First check to see if this file represents content that's already in the db
+      $dbContent = $this->cms->getContentByAddress($fileObj['address']);
+
+      // If the content in this file already exists in the db....
+      if ($dbContent) {
+        // If it's already being managed by another content file....
+        foreach($this->getFileList()->filter('contentId', (int)$dbContent['id']) as $dbFile) {
+          // If that file still exists, throw an exception. Can't have two files managing one content
+          if (file_exists($this->getFullFilePath($dbFile['path']))) throw new InvalidContentFileException("It appears as though content at $check[address] is already being managed by the file `$cf[path]`. The file `$dbFile[path]` is a duplicate and should be removed to avoid confusion.");
+
+          // Otherwise...
+          else {
+            // If we haven't already chosen a ContentFile to rep this content, choose this one
+            if (!$contentFile) {
+              $contentFile = $dbFile;
+              $contentFile['path'] = $this->getDbFilePath($filepath);
+
+            // else delete it (this is in case the db is way screwed up and there's more than one duplicate)
+            } else {
+              $this->db->deleteObject($dbFile);
+              $this->fileList->remove($dbFile);
+            }
           }
         }
 
-        // Now all is well, transfer the data and proceed with the save
-        $data = $dbContent->getData();
-        unset($data['id']);
-        $check->updateFromUserInput($data);
-        $check['tags'] = $dbContent['tags'];
-        $dbContent = $check;
-      }
+        // Update from file data
+        $dbContent->updateFromUserInput($this->getDataFromFile($filepath));
 
-    // If the content file HAS already been scanned, update the fields of its content object
-    } else {
-      $newData = $this->getDataFromFile($filepath);
-      $dbContent->updateFromUserInput($newData);
-      if (array_key_exists('tags', $newData)) $dbContent['tags'] = $newData['tags'];
+      // If the content in this file isn't already in the Db, consider this a totally new entry
+      } else {
+        $contentFile = (new ContentFile())->set('path', $this->getDbFilePath($filepath));
+        $this->fileList[] = $contentFile;
+        $dbContent = $fileObj;
+      }
     }
 
-    // Save
+    // At this point, all we need to do is save
     $this->cms->saveObject($dbContent);
 
     // Update and save the content file record
@@ -171,11 +169,9 @@ class ContentSynchronizerLib {
       $newFile .= "\n".$fileObj['content'];
 
       file_put_contents($this->getFullFilePath($filepath), $newFile);
+      $contentFile['mtime'] = new \DateTime('@'.((int)filemtime($this->getFullFilePath($filepath))));
+      $this->db->saveObject($contentFile);
     }
-
-    // Now update file mtime in db so we don't update again next time
-    $contentFile['mtime'] = new \DateTime('@'.((int)filemtime($this->getFullFilePath($filepath))));
-    $this->db->saveObject($contentFile);
   }
 
 
@@ -197,23 +193,6 @@ class ContentSynchronizerLib {
     else return '/'.trim($filepath, '/');
   }
 
-  public function getFilePreviousPath(string $filepath) {
-    $prevPath = null;
-    $newFile = $this->getObjectFromFile($filepath);
-
-    foreach ($this->getFileList() as $k => $file) {
-      $contentFile = $this->cms->getContentById($file['contentId']);
-      // Could go a lot deeper on this, but for now, just checking address and assuming
-      // we didn't also change the content or properties
-      if ($contentFile['address'] == $newFile['address']) return $file['path'];
-    }
-    return null;
-  }
-
-  public function registerFileRename(string $prevPath, string $newPath) {
-    $this->db->registerFileRename($prevPath, $newPath);
-  }
-
 
 
 
@@ -224,9 +203,13 @@ class ContentSynchronizerLib {
 
   public function getObjectFromFile(string $filepath) {
     $data = $this->getDataFromFile($filepath);
-    $contentObject = $this->dressData($data);
-    if ($contentObject['parent']) $contentObject['address'] = $contentObject['parent'].'/'.$contentObject::createSlug($contentObject['title']);
-    $contentObject->setDb($this->cms);
+    try { $contentObject = $this->dressData($data); }
+    catch (UnknownContentClassException $e) {
+      if (!is_array($e->extra)) $e->extra = array();
+      $e->extra['dbFilepath'] = $this->getDbFilePath($filepath);
+      $e->extra['fullFilepath'] = $this->getFullFilePath($filepath);
+      throw $e;
+    }
     return $contentObject;
   }
 
@@ -263,9 +246,15 @@ class ContentSynchronizerLib {
 
   protected function dressData(array $data) {
     $classes = $this->getContentClasses();
-    if (!$data['contentClass'] || !array_key_exists($data['contentClass'], $classes)) throw new InvalidContentFileException("All content files must contain a `contentClass` header that contains one of the known content classes. (Hint: If you don't think you should be getting this error, make sure that you're overriding the `ContentSynchronizerLib::dressData` and adding content class maps for all the classes in your database.)");
+    if (!$data['contentClass'] || !array_key_exists($data['contentClass'], $classes)) {
+      $e = new UnknownContentClassException("All content files must contain a `contentClass` header that contains one of the known content classes. The contentClass header for this file is `$data[contentClass]`. (Hint: If you don't think you should be getting this error, make sure that you're overriding the `ContentSynchronizerLib::dressData` and adding content class maps for all the classes in your database.)");
+      $e->extra = array('contentClass' => $data['contentClass']);
+      throw $e;
+    }
     $obj = new $classes[$data['contentClass']]();
     $obj->updateFromUserInput($data);
+    if (array_key_exists('parent', $data) && $obj->fieldSetBySystem('address')) $obj->set('address', $data['parent'].$obj['address'], true);
+    $obj->setDb($this->cms);
     return $obj;
   }
 

@@ -107,6 +107,17 @@ class Env {
     file_put_contents(ContentSyncConfig::getInstance()->getContentPagesDir().'/'.$filename, $str);
   }
 
+  public static function deleteFile(string $filename) {
+    unlink(ContentSyncConfig::getInstance()->getContentPagesDir().'/'.$filename);
+  }
+
+  public static function renameFile(string $old, string $new) {
+    rename(
+      ContentSyncConfig::getInstance()->getContentPagesDir().$old,
+      ContentSyncConfig::getInstance()->getContentPagesDir().$new
+    );
+  }
+
   public static function getKnownContentData(int $key=null) {
     $c = array(
       array(
@@ -116,6 +127,38 @@ class Env {
         'imgPrefix' => '2016-12-new-content-1',
         'content' => 'My new test content',
         'tags' => 'Five Tag, Six Tag',
+      ),
+      array(
+        'title' => 'New Content 2',
+        'contentClass' => 'post',
+        'dateCreated' => '2016-12-06',
+        'imgPrefix' => '2016-12-new-content-2',
+        'content' => 'My second new test content',
+        'tags' => 'Five Tag, Six Tag',
+      ),
+      array(
+        'title' => 'New Content 3',
+        'contentClass' => 'post',
+        'dateCreated' => '2016-11-13',
+        'imgPrefix' => '2016-11-new-content-3',
+        'content' => 'My new test content predated',
+        'tags' => 'Five Tag, Six Tag',
+      ),
+      array(
+        'title' => 'New Content with parent',
+        'contentClass' => 'post',
+        'dateCreated' => '2016-12-10',
+        'imgPrefix' => '2016-12-content-with-parent',
+        'content' => 'My new test content with a parent',
+        'parent' => '/writings',
+        'tags' => 'One Tag, Profound Realizations',
+      ),
+      array(
+        'title' => 'New Content 8',
+        'contentClass' => 'page',
+        'dateCreated' => '2016-12-09',
+        'imgPrefix' => '2016-12-new-page',
+        'content' => 'This is a page instead of a post',
       ),
     );
 

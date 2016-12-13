@@ -31,6 +31,15 @@ class ContentSynchronizerTest extends TestCase {
     $this->assertEquals(2, count($obj['tags']));
   }
 
+  public function testHandlesParentCorrectly() {
+    $lib = Env::getLib();
+    $obj = $lib->getObjectFromFile('/knownContent3.md');
+    $data = Env::getKnownContentData(3);
+    $this->assertTrue(array_key_exists('parent', $data), "The chosen content should have a parent key for this test to be useful");
+    $this->assertEquals($data['title'], $obj['title']);
+    $this->assertEquals($data['parent'].'/'.\Skel\Page::createSlug($data['title']), $obj['address']);
+  }
+
   public function testThrowsErrorOnUnknownClass() {
     $lib = Env::getLib();
     $unknownClass = array(
@@ -47,9 +56,12 @@ class ContentSynchronizerTest extends TestCase {
       $this->fail("Should have thrown an exception when trying to parse content with an unknown class");
     } catch (PHPUnit_Framework_AssertionFailedError $e) {
       throw $e;
-    } catch (\Skel\InvalidContentFileException $e) {
+    } catch (\Skel\UnknownContentClassException $e) {
       $this->assertTrue(true, "This is the expected exception.");
     }
+
+    // Clean up
+    Env::deleteFile('unknownClass.md');
   }
 
   public function testUpdateDbFromNewFile() {
@@ -149,16 +161,68 @@ class ContentSynchronizerTest extends TestCase {
     $this->assertEquals($dbObj['dateCreated']->format('Y-m-d'), $fileObj['dateCreated']->format('Y-m-d'));
   }
 
-  public function testSynchronizeFiles() {
-  }
-
-  public function testSystemRecognizesRenamedFile() {
-    $lib = Env::getLib();
-  }
-
   public function testAutoRename() {
     // Should be able to rename a file and pass it to `updateDbFromFile` and have it correct the db records
     // Result should be no more record for old file, new record for new file, and updated content, if applicable
+    $lib = Env::getLib();
+    $cms = ContentSyncConfig::getInstance()->getCms();
+    $db = ContentSyncConfig::getInstance()->getDb();
+    $data = Env::getKnownContentData(0);
+    $addr = '/'.\Skel\Page::createSlug($data['title']);
+
+    // If not already in DB, add this content to the DB via a ContentFile
+    if ($cms->getContentByAddress($addr) === null) $lib->updateDbFromFile('/knownContent0.md');
+
+    // Verify that we have a ContentFile record in the db for this content
+    $this->assertEquals(1, count(ContentSyncConfig::getInstance()->getDb()->getContentFileList()->filter('path', '/knownContent0.md')), "Looks like there's no ContentFile in the database for `knownContent0.md`. Something must be off...");
+
+    // Rename and add again
+    Env::renameFile('/knownContent0.md', '/renamedContent0.md');
+    $lib->updateDbFromFile('/renamedContent0.md');
+
+    $fileList = $db->getContentFileList();
+    $this->assertTrue(!$fileList->contains('path', '/knownContent0.md'), "The database should no longer contain a record for the old filename");
+    $this->assertTrue($fileList->contains('path', '/renamedContent0.md'), "The database should now contain a record for the new filename");
+  }
+
+  public function testDeleteFile() {
+    $lib = Env::getLib();
+    $cms = ContentSyncConfig::getInstance()->getCms();
+    $db = ContentSyncConfig::getInstance()->getDb();
+    $data = Env::getKnownContentData(1);
+    $addr = '/'.\Skel\Page::createSlug($data['title']);
+
+    // If not already in DB, add this content to the DB via a ContentFile
+    if (($dbObj = $cms->getContentByAddress($addr)) === null) {
+      $lib->updateDbFromFile('/knownContent1.md');
+      $dbObj = $cms->getContentByAddress($addr);
+    }
+
+    // Verify that we have a ContentFile record in the db for this content
+    $this->assertEquals(1, count(ContentSyncConfig::getInstance()->getDb()->getContentFileList()->filter('path', '/knownContent1.md')), "Looks like there's no ContentFile in the database for `knownContent1.md`. Something must be off...");
+
+    $lib->deleteFromDb('/knownContent1.md');
+
+    $this->assertEquals(null, $cms->getContentById($dbObj['id']), "Should not be able to pull deleted content out of the db");
+    $this->assertEquals(0, count(ContentSyncConfig::getInstance()->getDb()->getContentFileList()->filter('path', '/knownContent1.md')), "There should no longer be a contentFile record in the db.");
+  }
+
+  public function testSynchronizeFiles() {
+    $lib = Env::getLib();
+    $config = ContentSyncConfig::getInstance();
+    $db = $config->getDb();
+    $cms = $config->getCms();
+    $lib->syncContent();
+
+    $this->assertEquals(count($db->getContentFileList()), count($cms->getContentIndex()), "There should be the same number of entries in the database as there are files in the folder");
+
+    $testData = Env::getKnownContentData(3);
+    $addr = $testData['parent'].'/'.\Skel\Page::createSlug($testData['title']);
+    $dbContent = $cms->getContentByAddress($addr);
+    $this->assertTrue($dbContent instanceof \Skel\Page, "Should have gotten a Page instance from the db.");
+
+    $contentFile = $db->getContentFileList()->filter('path', '/knownContent3.md')[0];
+    $this->assertEquals($dbContent['id'], $contentFile['contentId'], "The known content file should be associated with the content");
   }
 }
 

@@ -32,7 +32,7 @@ class ContentSyncDb extends Db implements Interfaces\ContentSyncDb {
 
 
   public function getContentFileList() {
-    $list = $this->db->query('SELECT * FROM "contentFiles"');
+    $list = $this->db->query('SELECT * FROM "contentFiles" ORDER BY path ASC, mtime DESC');
     $list = $list->fetchAll(\PDO::FETCH_ASSOC);
     foreach($list as $k => $data) $list[$k] = ContentFile::restoreFromData($data);
     return new DataCollection($list);
