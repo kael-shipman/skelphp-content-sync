@@ -21,7 +21,7 @@ class ContentSynchronizerLib {
     return $this->fileList;
   }
 
-  public function syncContent() {
+  public function syncContent(bool $doDbToFile=true) {
     // Iterate through all files in content pages directory and update records
     foreach($this->filesInDir($this->config->getContentPagesDir()) as $f) {
       if ($this->isIgnored($f[0], $f[1])) continue;
@@ -35,7 +35,7 @@ class ContentSynchronizerLib {
       if (count($dbFile) == 0 || filemtime($path) > $dbFile[0]['mtime']) $this->updateDbFromFile($path);
 
       // Otherwise, update the file from the DB, if applicable
-      else $this->updateFileFromDb($path);
+      elseif ($doDbToFile) $this->updateFileFromDb($path);
     }
 
     // Now iterate through the files in the db cache and delete if nonexistent
@@ -240,12 +240,8 @@ class ContentSynchronizerLib {
     return $data;
   }
 
-  public function getContentClasses() {
-    return array('post' => 'Skel\Post', 'page' => 'Skel\Page');
-  }
-
   protected function dressData(array $data) {
-    $classes = $this->getContentClasses();
+    $classes = $this->cms->getContentClasses();
     if (!$data['contentClass'] || !array_key_exists($data['contentClass'], $classes)) {
       $e = new UnknownContentClassException("All content files must contain a `contentClass` header that contains one of the known content classes. The contentClass header for this file is `$data[contentClass]`. (Hint: If you don't think you should be getting this error, make sure that you're overriding the `ContentSynchronizerLib::dressData` and adding content class maps for all the classes in your database.)");
       $e->extra = array('contentClass' => $data['contentClass']);
