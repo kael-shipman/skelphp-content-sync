@@ -47,9 +47,11 @@ class ContentSynchronizerLib {
 
     // Now iterate through the files in the db cache and delete if nonexistent
     foreach($this->getFileList(true) as $dbFile) {
-      $this->notifyListeners('BeforeDeleteNonexistentDbFileRecord', array($dbFile['path']));
-      if (!file_exists($this->getFullFilePath($dbFile['path']))) $this->deleteFromDb($dbFile['path']);
-      $this->notifyListeners('AfterDeleteNonexistentDbFileRecord', array($dbFile['path']));
+      if (!file_exists($this->getFullFilePath($dbFile['path']))) {
+        $this->notifyListeners('BeforeDeleteNonexistentDbFileRecord', array($dbFile['path']));
+        $this->deleteFromDb($dbFile['path']);
+        $this->notifyListeners('AfterDeleteNonexistentDbFileRecord', array($dbFile['path']));
+      }
     }
 
     // Clear everything out
