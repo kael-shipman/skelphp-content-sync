@@ -256,7 +256,7 @@ class ContentSynchronizerLib {
     foreach($headers as $i => $prop) {
       $delim = strpos($prop, ':');
       // Note: This should be converted to a log entry instead of thrown as an exception
-      if (!$delim) throw InvalidContentFileException("This content file appears to have a malformed header. Can't find the colon delimiter in header #$i, '".substr($prop,0,30).(strlen($prop) > 30 ? '...' : '')."'");
+      if (!$delim) throw new InvalidContentFileException("This content file appears to have a malformed header. Can't find the colon delimiter in header #$i, '".substr($prop,0,30).(strlen($prop) > 30 ? '...' : '')."'");
       $k = substr($prop,0,$delim);
       $v = trim(substr($prop,$delim+1));
       if ($v == '') $v = null;
