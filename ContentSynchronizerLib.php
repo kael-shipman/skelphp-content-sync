@@ -300,7 +300,14 @@ class ContentSynchronizerLib {
   protected function isIgnored(string $dirname, string $filename) {
     if (substr($filename, 0, 1) == '.') return true;
     elseif ($filename == 'README.md' || $filename == 'LICENSE') return true;
-    else return false;
+    else {
+      $ignore = array('jpg', 'jpeg', 'gif', 'png', 'svg', 'mov', 'avi', 'mp3', 'mp4', 'ogg');
+      $lastDot = strrpos($filename, '.');
+      if ($lastDot) $ending = substr($filename, $lastDot+1);
+      else $ending == '';
+      if (array_search($ending, $ignore) !== false) return true;
+      else return false;
+    }
   }
 }
 
