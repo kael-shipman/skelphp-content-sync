@@ -287,6 +287,7 @@ class ContentSynchronizerLib {
       $tags = preg_split('/,\s*/', trim($data['tags'], ",\t "));
       $data['tags'] = $this->cms->getOrAddTagsByName($tags);
     }
+    if (!array_key_exists('contentClass', $data)) $data['contentClass'] = 'post';
   }
 
 
