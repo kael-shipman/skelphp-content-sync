@@ -2,6 +2,8 @@
 namespace Skel;
 
 class ContentSynchronizerLib {
+  use ObservableTrait;
+
   protected $db;
   protected $cms;
   protected $config;
@@ -12,6 +14,7 @@ class ContentSynchronizerLib {
     $this->db = $db;
     $this->cms = $cms;
     $this->config = $config;
+    $this->notifyListeners('Create');
   }
 
   // Execution Functions
@@ -31,20 +34,30 @@ class ContentSynchronizerLib {
       // Filter DB objects to get the one associated with this path (should only be one entry, but we shouldn't assume....)
       $dbFile = $this->getFileList()->filter('path', $dbPath);
 
+      $this->notifyListeners('BeforeProcessFile', array($path, $dbPath, $dbFile));
+
       // If the file is not found in the database or the db is out of date, update
       if (count($dbFile) == 0 || filemtime($path) > $dbFile[0]['mtime']) $this->updateDbFromFile($path);
 
       // Otherwise, update the file from the DB, if applicable
       elseif ($doDbToFile) $this->updateFileFromDb($path);
+
+      $this->notifyListeners('AfterProcessFile', array($path, $dbPath, $dbFile));
     }
 
     // Now iterate through the files in the db cache and delete if nonexistent
-    foreach($this->getFileList() as $dbFile) {
-      if (!file_exists($this->getFullFilePath($dbFile['path']))) $this->deleteFromDb($dbFile['path']);
+    foreach($this->getFileList(true) as $dbFile) {
+      if (!file_exists($this->getFullFilePath($dbFile['path']))) {
+        $this->notifyListeners('BeforeDeleteNonexistentDbFileRecord', array($dbFile['path']));
+        $this->deleteFromDb($dbFile['path']);
+        $this->notifyListeners('AfterDeleteNonexistentDbFileRecord', array($dbFile['path']));
+      }
     }
 
     // Clear everything out
     $this->fileList = null;
+
+    $this->notifyListeners('AfterSyncContent');
   }
 
   protected function filesInDir(string $dirname) {
@@ -78,13 +91,18 @@ class ContentSynchronizerLib {
     if (!$contentFile) return;
 
     $content = $this->cms->getContentById($contentFile['contentId']);
+    $this->notifyListeners('BeforeDeleteContent', array($filepath, $content));
     $this->cms->deleteObject($content);
+    $this->notifyListeners('AfterDeleteContent', array($filepath, $content));
+    $this->notifyListeners('BeforeDeleteContentFile', array($filepath, $contentFile));
     $this->db->deleteObject($contentFile);
+    $this->notifyListeners('AfterDeleteContentFile', array($filepath, $contentFile));
     $this->fileList->remove($contentFile);
   }
 
   public function updateDbFromFile(string $filepath) {
     $contentFile = $this->getFileList()->filter('path', $this->getDbFilePath($filepath))[0];
+    $this->notifyListeners('BeforeUpdateDbFromFile', array($filepath, $contentFile));
 
     // If the contentFile is already registered, get the content associated with it
     if ($contentFile) {
@@ -132,12 +150,16 @@ class ContentSynchronizerLib {
     }
 
     // At this point, all we need to do is save
+    $this->notifyListeners('BeforeSaveContent', array($filepath, $dbContent));
     $this->cms->saveObject($dbContent);
+    $this->notifyListeners('AfterSaveContent', array($filepath, $dbContent));
 
     // Update and save the content file record
     $contentFile['contentId'] = $dbContent['id'];
     $contentFile['mtime'] = new \DateTime('@'.((int)filemtime($this->getFullFilePath($filepath))));
     $this->db->saveObject($contentFile);
+
+    $this->notifyListeners('AfterUpdateDbFromFile', array($filepath, $dbContent));
   }
 
   public function updateFileFromDb(string $filepath) {
@@ -148,6 +170,7 @@ class ContentSynchronizerLib {
     $fileObj = $this->getObjectFromFile($filepath);
 
     // Update file object from db object
+    $this->notifyListeners('BeforeCompareDbToFile', array($filepath, $contentFile, $dbContent, $fileObj));
     $changed = false;
     foreach($dbContent as $field => $val) {
       if ($dbContent->fieldSetBySystem($field) || $val == $fileObj[$field]) continue;
@@ -158,8 +181,10 @@ class ContentSynchronizerLib {
       $fileObj['tags'] = $dbContent['tags'];
       $changed = true;
     }
+    $this->notifyListeners('AfterCompareDbToFile', array($filepath, $contentFile, $dbContent, $fileObj));
 
     if ($changed) {
+      $this->notifyListeners('BeforeWriteChangesToFile', array($filepath, $contentFile, $dbContent, $fileObj));
       $newFile = '';
       foreach($fileObj as $field => $val) {
         if ($fileObj->fieldSetBySystem($field) || $field == 'content' || $val instanceof Interfaces\DataCollection) continue;
@@ -171,7 +196,10 @@ class ContentSynchronizerLib {
       file_put_contents($this->getFullFilePath($filepath), $newFile);
       $contentFile['mtime'] = new \DateTime('@'.((int)filemtime($this->getFullFilePath($filepath))));
       $this->db->saveObject($contentFile);
+      $this->notifyListeners('AfterWriteChangesToFile', array($filepath, $contentFile, $dbContent, $fileObj));
     }
+
+    $this->notifyListeners('AfterUpdateFileFromDb', array($filepath, $contentFile));
   }
 
 
@@ -228,7 +256,7 @@ class ContentSynchronizerLib {
     foreach($headers as $i => $prop) {
       $delim = strpos($prop, ':');
       // Note: This should be converted to a log entry instead of thrown as an exception
-      if (!$delim) throw InvalidContentFileException("This content file appears to have a malformed header. Can't find the colon delimiter in header #$i, '".substr($prop,0,30).(strlen($prop) > 30 ? '...' : '')."'");
+      if (!$delim) throw new InvalidContentFileException("This content file appears to have a malformed header. Can't find the colon delimiter in header #$i, '".substr($prop,0,30).(strlen($prop) > 30 ? '...' : '')."'");
       $k = substr($prop,0,$delim);
       $v = trim(substr($prop,$delim+1));
       if ($v == '') $v = null;
@@ -259,6 +287,7 @@ class ContentSynchronizerLib {
       $tags = preg_split('/,\s*/', trim($data['tags'], ",\t "));
       $data['tags'] = $this->cms->getOrAddTagsByName($tags);
     }
+    if (!array_key_exists('contentClass', $data)) $data['contentClass'] = 'post';
   }
 
 
@@ -272,7 +301,14 @@ class ContentSynchronizerLib {
   protected function isIgnored(string $dirname, string $filename) {
     if (substr($filename, 0, 1) == '.') return true;
     elseif ($filename == 'README.md' || $filename == 'LICENSE') return true;
-    else return false;
+    else {
+      $ignore = array('jpg', 'jpeg', 'gif', 'png', 'svg', 'mov', 'avi', 'mp3', 'mp4', 'ogg');
+      $lastDot = strrpos($filename, '.');
+      if ($lastDot) $ending = substr($filename, $lastDot+1);
+      else $ending == '';
+      if (array_search($ending, $ignore) !== false) return true;
+      else return false;
+    }
   }
 }
 
