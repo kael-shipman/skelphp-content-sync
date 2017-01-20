@@ -3,27 +3,6 @@
 $path = '.';
 
 require_once $path.'/vendor/autoload.php';
-require_once $path.'/vendor/skel/interfaces/Interfaces.php';
-require_once $path.'/vendor/skel/interfaces/Exceptions.php';
-require_once $path.'/vendor/skel/traits/ErrorHandlerTrait.php';
-require_once $path.'/vendor/skel/traits/ObservableTrait.php';
-require_once $path.'/vendor/skel/traits/CliTrait.php';
-require_once $path.'/vendor/skel/templating/Component.php';
-require_once $path.'/vendor/skel/templating/ComponentCollection.php';
-require_once $path.'/vendor/skel/db/DataClass.php';
-require_once $path.'/vendor/skel/db/DataCollection.php';
-require_once $path.'/vendor/skel/db/Db.php';
-require_once $path.'/vendor/skel/cms/ContentTag.php';
-require_once $path.'/vendor/skel/cms/Page.php';
-require_once $path.'/vendor/skel/cms/Post.php';
-require_once $path.'/vendor/skel/cms/Cms.php';
-require_once $path.'/vendor/skel/app/App.php';
-
-require_once $path.'/ContentSyncDb.php';
-require_once $path.'/ContentSynchronizerLib.php';
-require_once $path.'/ContentSynchronizer.php';
-require_once $path.'/ContentFile.php';
-
 
 class ContentSyncConfig implements \Skel\Interfaces\DbConfig, \Skel\Interfaces\ContentSyncConfig {
   const PROF_TEST = 1;

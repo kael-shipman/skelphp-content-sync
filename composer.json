@@ -1,6 +1,6 @@
 {
   "name" : "skel/content-sync",
-  "description" : "Skel ContentSync is a library for synchronizing content files and a Skel CMS database. It is intended to allow the user to manage content creation and editing in regular system files (which can be optionally version-controlled), while still providing the performance benefits of a database for the website.",
+  "description" : "Skel ContentSync is a library for synchronizing content files with a Skel CMS database. It is intended to allow the user to manage content creation and editing in regular system files (which can be optionally version-controlled), while still providing the performance benefits of a database for the website. It is optimally used by creating a git repo for content files which has a post-recieve hook that calls a `sync-content.php` script on the main project every time a revision is pushed to the repo.",
   "type" : "library",
   "keywords" : ["database", "cms", "content management system"],
   "license" : "GPL3",
@@ -13,9 +13,17 @@
     }
   ],
   "require" : {
-    "php" : ">=5.4"
+    "php" : ">=5.3",
+    "skel/header" : "~0.0",
+    "skel/db" : "~0.0"
   },
   "require-dev" : {
-    "phpunit/phpunit" : "~5"
+    "phpunit/phpunit" : "~5",
+    "skel/cms" : "~0.0"
+  },
+  "autoload" : {
+    "psr-4" : {
+      "Skel\\" : "src/"
+    }
   }
 }
