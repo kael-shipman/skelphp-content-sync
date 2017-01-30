@@ -16,6 +16,15 @@ class ContentFile extends DataClass implements Interfaces\ContentFile {
 
 
 
+  public function getPath() { return $this['path']; }
+  public function getMTime() { return $this['mtime']; }
+  public function getContentId() { return $this['contentId']; }
+
+
+
+
+
+
 
 
   protected function convertDataToField(string $field, $dataVal) {
