@@ -4,13 +4,15 @@ namespace Skel;
 class ContentSynchronizerLib {
   use ObservableTrait;
 
+  protected $factory;
   protected $db;
   protected $cms;
   protected $config;
   protected $fileList;
 
 
-  public function __construct(Interfaces\ContentSyncConfig $config, Interfaces\ContentSyncDb $db, Interfaces\Cms $cms) {
+  public function __construct(Interfaces\ContentSyncConfig $config, Interfaces\ContentSyncDb $db, Interfaces\Cms $cms, Interfaces\Factory $factory) {
+    $this->factory = $factory;
     $this->db = $db;
     $this->cms = $cms;
     $this->config = $config;
@@ -269,13 +271,7 @@ class ContentSynchronizerLib {
   }
 
   protected function dressData(array $data) {
-    $classes = $this->cms->getContentClasses();
-    if (!$data['contentClass'] || !array_key_exists($data['contentClass'], $classes)) {
-      $e = new UnknownContentClassException("All content files must contain a `contentClass` header that contains one of the known content classes. The contentClass header for this file is `$data[contentClass]`. (Hint: If you don't think you should be getting this error, make sure that you're overriding the `ContentSynchronizerLib::dressData` and adding content class maps for all the classes in your database.)");
-      $e->extra = array('contentClass' => $data['contentClass']);
-      throw $e;
-    }
-    $obj = new $classes[$data['contentClass']]();
+    $obj = $this->factory->create('content', $data['contentClass'], $data);
     $obj->updateFromUserInput($data);
     if (array_key_exists('parent', $data) && $obj->fieldSetBySystem('address')) $obj->set('address', $data['parent'].$obj['address'], true);
     $obj->setDb($this->cms);
