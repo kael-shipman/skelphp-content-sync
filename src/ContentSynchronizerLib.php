@@ -271,7 +271,7 @@ class ContentSynchronizerLib {
   }
 
   protected function dressData(array $data) {
-    $obj = $this->factory->create('content', $data['contentClass'], $data);
+    $obj = $this->factory->new('content', $data['contentClass']);
     $obj->updateFromUserInput($data);
     if (array_key_exists('parent', $data) && $obj->fieldSetBySystem('address')) $obj->set('address', $data['parent'].$obj['address'], true);
     $obj->setDb($this->cms);
