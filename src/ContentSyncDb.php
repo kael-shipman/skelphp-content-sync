@@ -5,9 +5,9 @@ class ContentSyncDb extends Db implements Interfaces\ContentSyncDb {
   const VERSION = 1;
   const SCHEMA_NAME = "ContentSyncDb";
 
-  public function __construct(Interfaces\DbConfig $config) {
+  public function __construct(Interfaces\DbConfig $config, Interfaces\Factory $factory) {
     if (!($config instanceof Interfaces\ContentSyncConfig)) throw new InvalidConfigException("Your config for `ContentSyncDb` must implement the `ContentSyncConfig` interface.");
-    parent::__construct($config);
+    parent::__construct($config, $factory);
     try {
       $this->verifyEnvironment();
     } catch (\PDOException $e) {
