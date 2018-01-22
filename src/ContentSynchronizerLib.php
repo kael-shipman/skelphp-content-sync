@@ -38,11 +38,15 @@ class ContentSynchronizerLib {
 
       $this->notifyListeners('BeforeProcessFile', array($path, $dbPath, $dbFile));
 
-      // If the file is not found in the database or the db is out of date, update
-      if (count($dbFile) == 0 || filemtime($path) > $dbFile[0]['mtime']) $this->updateDbFromFile($path);
+      try {
+          // If the file is not found in the database or the db is out of date, update
+          if (count($dbFile) == 0 || filemtime($path) > $dbFile[0]['mtime']) $this->updateDbFromFile($path);
 
-      // Otherwise, update the file from the DB, if applicable
-      elseif ($doDbToFile) $this->updateFileFromDb($path);
+          // Otherwise, update the file from the DB, if applicable
+          elseif ($doDbToFile) $this->updateFileFromDb($path);
+      } catch (InvalidDataObjectException $e) {
+          throw new \RuntimeException("Error parsing file `$path`: {$e->getMessage()}", 0);
+      }
 
       $this->notifyListeners('AfterProcessFile', array($path, $dbPath, $dbFile));
     }
@@ -145,10 +149,14 @@ class ContentSynchronizerLib {
 
       // If the content in this file isn't already in the Db, consider this a totally new entry
       } else {
-        $contentFile = (new ContentFile())->set('path', $this->getDbFilePath($filepath));
-        $this->fileList[] = $contentFile;
         $dbContent = $fileObj;
       }
+    }
+
+    // If we haven't found a legit contentFile by now, just make one
+    if (!$contentFile) {
+        $contentFile = (new ContentFile())->set('path', $this->getDbFilePath($filepath));
+        $this->fileList[] = $contentFile;
     }
 
     // At this point, all we need to do is save
