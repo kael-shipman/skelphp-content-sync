@@ -40,12 +40,12 @@ class ContentSynchronizerLib {
 
       try {
           // If the file is not found in the database or the db is out of date, update
-          if (count($dbFile) == 0 || filemtime($path) > $dbFile[0]['mtime']) $this->updateDbFromFile($path);
+          if (count($dbFile) == 0 || filemtime($path) > $dbFile[0]['mtime']->format('U')) $this->updateDbFromFile($path);
 
           // Otherwise, update the file from the DB, if applicable
           elseif ($doDbToFile) $this->updateFileFromDb($path);
       } catch (InvalidDataObjectException $e) {
-          throw new \RuntimeException("Error parsing file `$path`: {$e->getMessage()}", 0);
+          throw new \RuntimeException("Error parsing file `$path`: {$e->getMessage()}");
       }
 
       $this->notifyListeners('AfterProcessFile', array($path, $dbPath, $dbFile));
@@ -288,7 +288,8 @@ class ContentSynchronizerLib {
 
   protected function prepareObjectData(array &$data) {
     if (array_key_exists('tags', $data)) {
-      $tags = preg_split('/,\s*/', trim($data['tags'], ",\t "));
+      $tags = trim($data['tags']);
+      $tags = ($tags !== '') ? preg_split('/,\s*/', trim($data['tags'], ",\t ")) : [];
       $data['tags'] = $this->cms->getOrAddTagsByName($tags);
     }
     if (!array_key_exists('contentClass', $data)) $data['contentClass'] = 'post';
